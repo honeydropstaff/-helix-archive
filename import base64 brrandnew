@@ -1,0 +1,93 @@
+ 
+import base64
+import getpass
+import traceback
+from Crypto.Protocol.KDF import scrypt
+from Crypto.Cipher import AES
+
+# ===========================
+# اطلب كلمة المرور من المستخدم
+# ===========================
+
+def get_password():
+    return getpass.getpass("Password: ")
+
+# ===========================
+# ضع بيانات الكتل هنا
+# ===========================
+blocks = [
+    {
+        "name": "BLOCK 1",
+        "salt": "PUT_SALT_HERE",
+        "nonce": "PUT_NONCE_HERE",
+        "aad": "PUT_AAD_HERE",
+        "ciphertext": "PUT_CIPHERTEXT_HERE",
+    },
+    {
+        "name": "BLOCK 2",
+        "salt": "PUT_SALT_HERE",
+        "nonce": "PUT_NONCE_HERE",
+        "aad": "PUT_AAD_HERE",
+        "ciphertext": "PUT_CIPHERTEXT_HERE",
+    },
+    {
+        "name": "BLOCK 3",
+        "salt": "PUT_SALT_HERE",
+        "nonce": "PUT_NONCE_HERE",
+        "aad": "PUT_AAD_HERE",
+        "ciphertext": "PUT_CIPHERTEXT_HERE",
+    },
+]
+
+
+def is_placeholder(value):
+    return not value or value.startswith("PUT_")
+
+
+def decode_block(block, password):
+    print("=" * 60)
+    print(block.get("name", "<unnamed block>"))
+
+    required_keys = ["salt", "nonce", "aad", "ciphertext"]
+    for key in required_keys:
+        if is_placeholder(block.get(key, "")):
+            print(f"[-] Block '{block.get('name', '<unnamed>')}' contains placeholder value for '{key}'.")
+            print("    Fill in all base64-encoded values before running the script.")
+            return
+
+    try:
+        salt = base64.b64decode(block["salt"])
+        nonce = base64.b64decode(block["nonce"])
+        aad = base64.b64decode(block["aad"])
+        data = base64.b64decode(block["ciphertext"])
+    except Exception as exc:
+        print("[-] Failed to decode base64 data:", exc)
+        traceback.print_exc()
+        return
+
+    if len(data) < 16:
+        print("[-] Ciphertext is too short to contain an authentication tag.")
+        return
+
+    ciphertext = data[:-16]
+    tag = data[-16:]
+
+    try:
+        key = scrypt(
+            password=password.encode(),
+            salt=salt,
+            key_len=32,
+            N=262144,
+            r=8,
+            p=1,
+        )
+
+        cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
+        cipher.update(aad)
+        plaintext = cipher.decrypt_and_verify(ciphertext, tag)
+
+        print("[+] SUCCESS")
+        print(plaintext.decode("utf-8"))
+
+    except Exception:
+        print("[-] Wrong password or corrupted data.")
